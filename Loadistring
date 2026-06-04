@@ -1,0 +1,329 @@
+-- Carregamento da Interface
+local success, Fluent = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/main.lua"))()
+end)
+
+if not success or not Fluent then
+    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+end
+
+-- Janela Principal
+local Window = Fluent:CreateWindow({
+    Title = "W-Azure Style Menu",
+    SubTitle = "Mobile Edition",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = false,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+-- Abas
+local Tabs = {
+    Combat = Window:AddTab({ Title = "Combat", Icon = "crosshair" }),
+    Movement = Window:AddTab({ Title = "Movement", Icon = "zap" }),
+    Visual = Window:AddTab({ Title = "Visual", Icon = "eye" }),
+    Others = Window:AddTab({ Title = "Others", Icon = "sliders" }),
+    Server = Window:AddTab({ Title = "Server", Icon = "server" })
+}
+
+local LocalPlayer = game.Players.LocalPlayer
+local Players = game:GetService("Players")
+
+---------------------------------------------------------
+-- HITBOX
+---------------------------------------------------------
+local hitboxSettings = {
+    enabled = false,
+    size = 5,
+    transparency = 0.7,
+    targets = {},
+    connections = {}
+}
+
+local function removeHitbox(targetPlayer)
+    local data = hitboxSettings.targets[targetPlayer]
+    if not data then return end
+
+    pcall(function()
+        local char = targetPlayer.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.Size = data.originalSize or Vector3.new(2,2,2)
+                hrp.Transparency = data.originalTransparency or 0
+                hrp.CanCollide = true
+            end
+        end
+    end)
+
+    if data.hitboxPart then data.hitboxPart:Destroy() end
+    if data.weld then data.weld:Destroy() end
+    hitboxSettings.targets[targetPlayer] = nil
+end
+
+local function createHitbox(targetPlayer)
+    if targetPlayer == LocalPlayer then return end
+    removeHitbox(targetPlayer)
+
+    local char = targetPlayer.Character
+    if not char then return end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local data = {
+        originalSize = hrp.Size,
+        originalTransparency = hrp.Transparency,
+        hitboxPart = nil,
+        weld = nil
+    }
+
+    local visual = Instance.new("Part")
+    visual.Name = "HitboxVisual"
+    visual.Anchored = false
+    visual.CanCollide = false
+    visual.Size = Vector3.new(hitboxSettings.size, hitboxSettings.size, hitboxSettings.size)
+    visual.Transparency = hitboxSettings.transparency
+    visual.Color = Color3.fromRGB(255,0,0)
+    visual.Material = Enum.Material.Neon
+    visual.Parent = char
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = hrp
+    weld.Part1 = visual
+    weld.Parent = visual
+
+    hrp.Size = Vector3.new(hitboxSettings.size, hitboxSettings.size, hitboxSettings.size)
+    hrp.Transparency = 0.8
+    hrp.CanCollide = false
+
+    data.hitboxPart = visual
+    data.weld = weld
+    hitboxSettings.targets[targetPlayer] = data
+end
+
+local function setupPlayerListener(player)
+    if player == LocalPlayer then return end
+    if hitboxSettings.connections[player] then
+        hitboxSettings.connections[player]:Disconnect()
+    end
+    hitboxSettings.connections[player] = player.CharacterAdded:Connect(function(char)
+        if hitboxSettings.enabled then
+            task.wait(0.5)
+            createHitbox(player)
+        end
+    end)
+    if player.Character and hitboxSettings.enabled then
+        createHitbox(player)
+    end
+end
+
+local function applyHitboxes()
+    for _, player in ipairs(Players:GetPlayers()) do
+        setupPlayerListener(player)
+    end
+end
+
+local function clearAllHitboxes()
+    for player, _ in pairs(hitboxSettings.targets) do
+        removeHitbox(player)
+    end
+    for player, conn in pairs(hitboxSettings.connections) do
+        conn:Disconnect()
+    end
+    hitboxSettings.targets = {}
+    hitboxSettings.connections = {}
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    removeHitbox(player)
+    if hitboxSettings.connections[player] then
+        hitboxSettings.connections[player]:Disconnect()
+        hitboxSettings.connections[player] = nil
+    end
+end)
+
+Tabs.Combat:AddToggle("HitboxToggle", {
+    Title = "Enable Hitbox",
+    Default = false
+}):OnChanged(function(Value)
+    hitboxSettings.enabled = Value
+    if Value then applyHitboxes() else clearAllHitboxes() end
+end)
+
+Tabs.Combat:AddSlider("HitboxSize", {
+    Title = "Hitbox Size",
+    Default = 5,
+    Min = 2,
+    Max = 15,
+    Rounding = 1,
+    Callback = function(Value)
+        hitboxSettings.size = Value
+        if hitboxSettings.enabled then
+            local players = {}
+            for plr, _ in pairs(hitboxSettings.targets) do
+                table.insert(players, plr)
+            end
+            for _, plr in ipairs(players) do
+                removeHitbox(plr)
+                createHitbox(plr)
+            end
+        end
+    end
+})
+
+Tabs.Combat:AddSlider("HitboxTransparency", {
+    Title = "Hitbox Transparency",
+    Default = 0.7,
+    Min = 0,
+    Max = 1,
+    Rounding = 1,
+    Callback = function(Value)
+        hitboxSettings.transparency = Value
+        for _, data in pairs(hitboxSettings.targets) do
+            if data.hitboxPart then
+                data.hitboxPart.Transparency = Value
+            end
+        end
+    end
+})
+
+---------------------------------------------------------
+-- SPEED HACK
+---------------------------------------------------------
+local speedSettings = {
+    enabled = false,
+    value = 32,
+    originalSpeed = 16
+}
+
+local function updateSpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.WalkSpeed = speedSettings.enabled and speedSettings.value or speedSettings.originalSpeed
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    updateSpeed()
+end)
+
+Tabs.Movement:AddToggle("SpeedToggle", {
+    Title = "Speed Hack",
+    Default = false
+}):OnChanged(function(Value)
+    speedSettings.enabled = Value
+    updateSpeed()
+end)
+
+Tabs.Movement:AddSlider("SpeedSlider", {
+    Title = "Walk Speed",
+    Default = 32,
+    Min = 16,
+    Max = 200,
+    Rounding = 1,
+    Callback = function(Value)
+        speedSettings.value = Value
+        if speedSettings.enabled then updateSpeed() end
+    end
+})
+
+---------------------------------------------------------
+-- HIGHLIGHTS
+---------------------------------------------------------
+local highlights = {}
+local highlightEnabled = false
+
+local function addHighlightToCharacter(character)
+    if not character or character:FindFirstChild("PlayerHighlight") then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "PlayerHighlight"
+    highlight.FillColor = Color3.fromRGB(220,20,60)
+    highlight.FillTransparency = 0.4
+    highlight.OutlineColor = Color3.fromRGB(0,0,0)
+    highlight.Adornee = character
+    highlight.Parent = character
+    table.insert(highlights, highlight)
+end
+
+local function applyHighlight(player)
+    if player == LocalPlayer then return end
+    player.CharacterAdded:Connect(function(char)
+        if highlightEnabled then addHighlightToCharacter(char) end
+    end)
+    if player.Character and highlightEnabled then
+        addHighlightToCharacter(player.Character)
+    end
+end
+
+local function removeHighlights()
+    for _, h in ipairs(highlights) do
+        if h and h.Parent then h:Destroy() end
+    end
+    table.clear(highlights)
+end
+
+Tabs.Visual:AddToggle("HighlightToggle", {
+    Title = "Highlights (Chams)",
+    Default = false
+}):OnChanged(function(Value)
+    highlightEnabled = Value
+    if Value then
+        for _, player in ipairs(Players:GetPlayers()) do applyHighlight(player) end
+    else
+        removeHighlights()
+    end
+end)
+
+---------------------------------------------------------
+-- AUTO EQUIP
+---------------------------------------------------------
+local autoEquipEnabled = false
+
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        if autoEquipEnabled then
+            pcall(function()
+                local character = LocalPlayer.Character
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if character and backpack then
+                    local currentTool = character:FindFirstChildOfClass("Tool")
+                    local items = backpack:GetChildren()
+                    local targetWeapon = nil
+                    if #items >= 2 then targetWeapon = items[2]
+                    elseif #items == 1 then targetWeapon = items[1] end
+                    if targetWeapon and targetWeapon:IsA("Tool") then
+                        if not currentTool or currentTool.Name ~= targetWeapon.Name then
+                            targetWeapon.Parent = character
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+Tabs.Others:AddToggle("AutoEquipToggle", {
+    Title = "Auto Equip Weapon",
+    Default = false
+}):OnChanged(function(Value)
+    autoEquipEnabled = Value
+end)
+
+---------------------------------------------------------
+-- REJOIN
+---------------------------------------------------------
+Tabs.Server:AddButton({
+    Title = "Rejoin Server",
+    Callback = function()
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+    end
+})
+
+Window:SelectTab(1)
